@@ -274,7 +274,7 @@ int main(int argc, char **argv)
 
     const ponto_mnt lista[] =
     {
-        // fonte       alvo        tipo        opcoes
+        // fonte       alvo        tipo        opções
         { "proc",     "/proc",    "proc",     "nosuid,noexec,nodev"                },
         { "sysfs",    "/sys",     "sysfs",    "nosuid,noexec,nodev"                },
         { "devtmpfs", "/dev",     "devtmpfs", "nosuid,strictatime,mode=0755"       },
@@ -283,7 +283,7 @@ int main(int argc, char **argv)
 
     const ponto_mnt efi[] =
     {
-        // fonte       alvo                         tipo        opcoes
+        // fonte       alvo                         tipo        opções
         { "efivarfs", "/sys/firmware/efi/efivars", "efivarfs", "nosuid,noexec,nodev" },
     };
 
