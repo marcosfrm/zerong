@@ -1,11 +1,13 @@
 #define _FILE_OFFSET_BITS 64
 #define _GNU_SOURCE
 
-#define ANSI_BOLD_WHITE "\033[1;37m"
-#define ANSI_BOLD_CYAN  "\033[1;36m"
-#define ANSI_BOLD_GREEN "\033[1;32m"
-#define ANSI_BOLD_RED   "\033[1;31m"
-#define ANSI_RESET      "\033[0m"
+#define ANSI_BOLD_WHITE   "\033[1;37m"
+#define ANSI_BOLD_CYAN    "\033[1;36m"
+#define ANSI_BOLD_MAGENTA "\033[1;35m"
+#define ANSI_BOLD_YELLOW  "\033[1;33m"
+#define ANSI_BOLD_GREEN   "\033[1;32m"
+#define ANSI_BOLD_RED     "\033[1;31m"
+#define ANSI_RESET        "\033[0m"
 
 // ANSI_BOLD_YELLOW
 #define BASH_PS1 "\\[\\033[1;33m\\]\\$\\[\\033[0m\\] "
@@ -25,6 +27,7 @@
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <kbdfile.h>
@@ -397,7 +400,10 @@ int main(int argc, char **argv)
         struct kfont_context *kfont_ctx;
         struct kbdfile *kbd_ctx;
         struct lk_ctx *lk_ctx;
+        struct stat sb;
         const char *opt;
+        char *versao;
+        char dtmp[9];
 
         const char *const kbddir[] = { "/usr/lib/kbd/keymaps/xkb/", NULL };
         const char *const kbdsuf[] = { ".map", NULL };
@@ -460,6 +466,25 @@ int main(int argc, char **argv)
         {
             perror("setsid");
         }
+
+        if (stat("/etc/zerong-release", &sb) == 0 &&
+            strftime(dtmp, sizeof(dtmp), "%Y%m%d", localtime(&sb.st_mtime)) > 0 &&
+            asprintf(&versao, "%s %s (%s)", "ZeroNG™", dtmp, ut.release) > 0)
+        {
+            ;
+        }
+        else
+        {
+            versao = strdup("ZeroNG™");
+        }
+
+        printf(ANSI_BOLD_YELLOW "─────────────────────────────────────────────" ANSI_RESET "\n");
+        printf(ANSI_BOLD_YELLOW "%s" ANSI_RESET "\n", versao);
+        printf(ANSI_BOLD_YELLOW "─────────────────────────────────────────────" ANSI_RESET "\n\n");
+        printf(ANSI_BOLD_YELLOW "→ Instruções: " ANSI_RESET);
+        printf(ANSI_BOLD_MAGENTA "`ajuda`" ANSI_RESET "\n\n");
+        fflush(stdout);
+        free(versao);
 
         setenv("PATH", "/usr/bin:/usr/sbin", 1);
         setenv("LC_ALL", "C.UTF-8", 1); // bash chama setlocale()
