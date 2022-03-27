@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/kd.h>
+#include <locale.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -467,6 +468,9 @@ int main(int argc, char **argv)
             perror("setsid");
         }
 
+        setenv("LC_ALL", "C.UTF-8", 1);
+        setlocale(LC_ALL, "");
+
         if (stat("/etc/zerong-release", &sb) == 0 &&
             strftime(dtmp, sizeof(dtmp), "%Y%m%d", localtime(&sb.st_mtime)) > 0 &&
             asprintf(&versao, "%s %s (%s)", "ZeroNG™", dtmp, ut.release) > 0)
@@ -487,7 +491,6 @@ int main(int argc, char **argv)
         free(versao);
 
         setenv("PATH", "/usr/bin:/usr/sbin", 1);
-        setenv("LC_ALL", "C.UTF-8", 1); // bash chama setlocale()
         setenv("SHELL", "/bin/bash", 1);
         setenv("CLICOLOR", "1", 1);
         setenv("HOME", "/root", 1);
