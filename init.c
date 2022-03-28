@@ -49,6 +49,79 @@ typedef struct
 // pid do bash
 pid_t bpid;
 
+void configura_terminal(void)
+{
+    struct termios tty;
+    struct kfont_context *kfont_ctx;
+    struct kbdfile *kbd_ctx;
+    struct lk_ctx *lk_ctx;
+    const char *opt;
+    int fd;
+
+    const char *const kbddir[] = { "/usr/lib/kbd/keymaps/xkb/", NULL };
+    const char *const kbdsuf[] = { ".map", NULL };
+
+    setenv("LC_ALL", "C.UTF-8", 1);
+    setlocale(LC_ALL, "");
+
+    // processo do bash configurará como terminal controlador depois
+    fd = open("/dev/tty1", O_RDWR|O_NOCTTY);
+    if (fd < 0)
+    {
+        perror("open");
+        return;
+    }
+
+    ioctl(fd, KDSKBMODE, K_UNICODE);
+    if (tcgetattr(fd, &tty) == 0)
+    {
+        tty.c_iflag |= IUTF8;
+        tcsetattr(fd, TCSAFLUSH, &tty);
+    }
+
+    kfont_init(NULL, &kfont_ctx);
+    if (kfont_ctx != NULL)
+    {
+        // apenas fontes 8x16 funcionam sem drivers DRM
+        kfont_load_font(kfont_ctx, fd, "ter-116b", 0, 0, 0, 0);
+        kfont_free(kfont_ctx);
+    }
+
+    // kernel cria variável foo=bar para cada opção de boot contendo atribuição
+    // sem atribuição, passa a ser argumento do init
+    opt = getenv("KEYB");
+    if (opt != NULL)
+    {
+        kbd_ctx = kbdfile_new(NULL);
+        if (kbd_ctx != NULL && kbdfile_find(opt, kbddir, kbdsuf, kbd_ctx) == 0)
+        {
+            lk_ctx = lk_init();
+            if (lk_ctx != NULL)
+            {
+                lk_set_parser_flags(lk_ctx, LK_FLAG_PREFER_UNICODE);
+                if (lk_parse_keymap(lk_ctx, kbd_ctx) == 0)
+                {
+                    lk_load_keymap(lk_ctx, fd, K_UNICODE);
+                }
+
+                lk_free(lk_ctx);
+            }
+
+            kbdfile_free(kbd_ctx);
+        }
+
+        unsetenv("KEYB");
+    }
+
+    dup2(fd, 0);
+    dup2(fd, 1);
+    dup2(fd, 2);
+    if (fd > 2)
+    {
+        close(fd);
+    }
+}
+
 // sem o ntfs-3g, esta função pode ser substituída por kill(-1, SIGKILL)
 void mata_processos(void)
 {
@@ -190,7 +263,7 @@ void carrega_mod(char *arquivo)
     r = kmod_module_new_from_path(ctx, arquivo, &mod);
     if (r == 0)
     {
-        fprintf(stderr, ANSI_BOLD_CYAN "carregando modulo %-16s... " ANSI_RESET, kmod_module_get_name(mod));
+        fprintf(stderr, ANSI_BOLD_CYAN "carregando módulo %-16s... " ANSI_RESET, kmod_module_get_name(mod));
         // sem KMOD_PROBE_IGNORE_LOADED, ignora módulos já carregados (ou sendo carregados)
         // sem KMOD_PROBE_FAIL_ON_LOADED, retorna 0 nesse caso
         r = kmod_module_probe_insert_module(mod, 0, NULL, NULL, NULL, NULL);
@@ -370,6 +443,9 @@ int main(int argc, char **argv)
         close(fd);
     }
 
+    configura_terminal();
+    // agora podemos usar acentos e caracteres especiais \o/
+
     if (uname(&ut) < 0)
     {
         perror("uname");
@@ -397,79 +473,19 @@ int main(int argc, char **argv)
 
     if (bpid == 0)
     {
-        struct termios tty;
-        struct kfont_context *kfont_ctx;
-        struct kbdfile *kbd_ctx;
-        struct lk_ctx *lk_ctx;
         struct stat sb;
-        const char *opt;
         char *versao;
         char dtmp[9];
-
-        const char *const kbddir[] = { "/usr/lib/kbd/keymaps/xkb/", NULL };
-        const char *const kbdsuf[] = { ".map", NULL };
-
-        // sem O_NOCTTY, passa a ser terminal controlador
-        fd = open("/dev/tty1", O_RDWR);
-        if (fd >= 0)
-        {
-            ioctl(fd, KDSKBMODE, K_UNICODE);
-            if (tcgetattr(fd, &tty) == 0)
-            {
-                tty.c_iflag |= IUTF8;
-                tcsetattr(fd, TCSAFLUSH, &tty);
-            }
-
-            kfont_init(NULL, &kfont_ctx);
-            if (kfont_ctx != NULL)
-            {
-                // apenas fontes 8x16 funcionam sem drivers DRM
-                kfont_load_font(kfont_ctx, fd, "ter-116b", 0, 0, 0, 0);
-                kfont_free(kfont_ctx);
-            }
-
-            // kernel cria variável foo=bar para cada opção de boot contendo atribuição
-            // sem atribuição, passa a ser argumento do init
-            opt = getenv("KEYB");
-            if (opt != NULL)
-            {
-                kbd_ctx = kbdfile_new(NULL);
-                if (kbd_ctx != NULL && kbdfile_find(opt, kbddir, kbdsuf, kbd_ctx) == 0)
-                {
-                    lk_ctx = lk_init();
-                    if (lk_ctx != NULL)
-                    {
-                        lk_set_parser_flags(lk_ctx, LK_FLAG_PREFER_UNICODE);
-                        if (lk_parse_keymap(lk_ctx, kbd_ctx) == 0)
-                        {
-                            lk_load_keymap(lk_ctx, fd, K_UNICODE);
-                        }
-
-                        lk_free(lk_ctx);
-                    }
-
-                    kbdfile_free(kbd_ctx);
-                }
-
-                unsetenv("KEYB");
-            }
-
-            dup2(fd, 0);
-            dup2(fd, 1);
-            dup2(fd, 2);
-            if (fd > 2)
-            {
-                close(fd);
-            }
-        }
 
         if (setsid() < 0)
         {
             perror("setsid");
         }
 
-        setenv("LC_ALL", "C.UTF-8", 1);
-        setlocale(LC_ALL, "");
+        if (ioctl(STDIN_FILENO, TIOCSCTTY, 0) != 0)
+        {
+            perror("ioctl TIOCSCTTY");
+        }
 
         if (stat("/etc/zerong-release", &sb) == 0 &&
             strftime(dtmp, sizeof(dtmp), "%Y%m%d", localtime(&sb.st_mtime)) > 0 &&
