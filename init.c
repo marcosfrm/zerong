@@ -65,7 +65,7 @@ void configura_terminal(void)
     setlocale(LC_ALL, "");
 
     // processo do bash configurará como terminal controlador depois
-    fd = open("/dev/tty1", O_RDWR|O_NOCTTY);
+    fd = open("/dev/tty0", O_RDWR|O_NOCTTY);
     if (fd < 0)
     {
         perror("open");
@@ -113,10 +113,10 @@ void configura_terminal(void)
         unsetenv("KEYB");
     }
 
-    dup2(fd, 0);
-    dup2(fd, 1);
-    dup2(fd, 2);
-    if (fd > 2)
+    dup2(fd, STDIN_FILENO);
+    dup2(fd, STDOUT_FILENO);
+    dup2(fd, STDERR_FILENO);
+    if (fd > STDERR_FILENO)
     {
         close(fd);
     }
