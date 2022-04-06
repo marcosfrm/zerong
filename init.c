@@ -49,6 +49,8 @@ typedef struct
 // pid do bash
 pid_t bpid;
 
+int desliga;
+
 void configura_terminal(void)
 {
     struct termios tty;
@@ -158,12 +160,21 @@ void mata_processos(void)
     }
 }
 
-void ctrlaltdel(int sn, siginfo_t *si, void *data)
+void termina(int sinal)
 {
-    if (sn == SIGINT && si->si_code == SI_KERNEL && bpid > 1)
+    if (bpid > 1)
     {
-        // bash ignora SIGTERM
-        kill(bpid, SIGHUP);
+        switch (sinal)
+        {
+            case SIGTERM:
+                desliga = 1;
+                // fallthrough
+            case SIGINT:
+                // bash ignora SIGTERM
+                kill(bpid, SIGHUP);
+            default:
+                break;
+        }
     }
 }
 
@@ -381,12 +392,13 @@ int main(int argc, char **argv)
 
     sigemptyset(&acao.sa_mask);
     // SA_RESTART evita funções retornando erro (EINTR)
-    acao.sa_flags = SA_SIGINFO|SA_RESTART;
-    acao.sa_sigaction = ctrlaltdel;
+    acao.sa_flags = SA_RESTART;
+    acao.sa_handler = termina;
     if (reboot(RB_DISABLE_CAD) == 0)
     {
         sigaction(SIGINT, &acao, NULL);
     }
+    sigaction(SIGTERM, &acao, NULL);
 
     umask(0022);
 
@@ -511,7 +523,10 @@ int main(int argc, char **argv)
         setenv("CLICOLOR", "1", 1);
         setenv("HOME", "/root", 1);
         setenv("PS1", BASH_PS1, 1);
-        chdir("/root");
+        if (chdir("/root") != 0)
+        {
+            perror("chdir");
+        }
         execlp("bash", "-bash", NULL);
         perror("execlp");
         exit(1);
@@ -537,7 +552,7 @@ int main(int argc, char **argv)
     mnt_free_context(cxt);
     sleep(1);
 
-    if (access("/run/zerong-poweroff", F_OK) == 0)
+    if (desliga == 1)
     {
         reboot(RB_POWER_OFF);
     }

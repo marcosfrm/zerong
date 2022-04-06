@@ -2,5 +2,5 @@
 
 int main(void)
 {
-    return !!kill(1, SIGTERM);
+    return !!kill(1, SIGINT);
 }
