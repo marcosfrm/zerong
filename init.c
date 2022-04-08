@@ -160,7 +160,7 @@ void mata_processos(void)
     }
 }
 
-void termina(int sinal)
+void termina_bash(int sinal)
 {
     if (bpid > 1)
     {
@@ -390,10 +390,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    sigemptyset(&acao.sa_mask);
+    sigfillset(&acao.sa_mask);
     // SA_RESTART evita funções retornando erro (EINTR)
     acao.sa_flags = SA_RESTART;
-    acao.sa_handler = termina;
+    acao.sa_handler = termina_bash;
     if (reboot(RB_DISABLE_CAD) == 0)
     {
         sigaction(SIGINT, &acao, NULL);
@@ -457,6 +457,8 @@ int main(int argc, char **argv)
 
     configura_terminal();
     // agora podemos usar acentos e caracteres especiais \o/
+    // antes de lista_dir_mod() pois consideramos que não existirão módulos DRM
+    // os drivers vesafb/efifb/simpledrm (built-in) são suficientes
 
     if (uname(&ut) < 0)
     {
