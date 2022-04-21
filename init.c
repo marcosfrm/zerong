@@ -49,7 +49,7 @@ typedef struct
 // pid do bash
 pid_t bpid;
 
-int desliga;
+int desliga = 0;
 
 void configura_terminal(void)
 {
@@ -428,7 +428,7 @@ int main(int argc, char **argv)
 
     for (i = 0; dev_links[i][0] != NULL; i++)
     {
-        if (symlink(dev_links[i][0], dev_links[i][1]) < 0)
+        if (symlink(dev_links[i][0], dev_links[i][1]) != 0)
         {
             perror("symlink");
         }
@@ -460,7 +460,7 @@ int main(int argc, char **argv)
     // antes de lista_dir_mod() pois consideramos que não existirão módulos DRM
     // os drivers vesafb/efifb/simpledrm (built-in) são suficientes
 
-    if (uname(&ut) < 0)
+    if (uname(&ut) != 0)
     {
         perror("uname");
         return 1;
