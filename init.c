@@ -1,27 +1,19 @@
 #define _FILE_OFFSET_BITS 64
 #define _GNU_SOURCE
 
-#define ANSI_BOLD_WHITE   "\033[1;37m"
-#define ANSI_BOLD_CYAN    "\033[1;36m"
-#define ANSI_BOLD_MAGENTA "\033[1;35m"
-#define ANSI_BOLD_YELLOW  "\033[1;33m"
-#define ANSI_BOLD_GREEN   "\033[1;32m"
-#define ANSI_BOLD_RED     "\033[1;31m"
-#define ANSI_RESET        "\033[0m"
-
-// ANSI_BOLD_YELLOW
-#define BASH_PS1 "\\[\\033[1;33m\\]\\$\\[\\033[0m\\] "
-
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/input.h>
 #include <linux/kd.h>
 #include <locale.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/prctl.h>
 #include <sys/reboot.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -37,6 +29,24 @@
 #include <libkmod.h>
 #include <libmount/libmount.h>
 #include <proc/readproc.h>
+
+#define ANSI_BOLD_WHITE   "\033[1;37m"
+#define ANSI_BOLD_CYAN    "\033[1;36m"
+#define ANSI_BOLD_MAGENTA "\033[1;35m"
+#define ANSI_BOLD_YELLOW  "\033[1;33m"
+#define ANSI_BOLD_GREEN   "\033[1;32m"
+#define ANSI_BOLD_RED     "\033[1;31m"
+#define ANSI_RESET        "\033[0m"
+
+// ANSI_BOLD_YELLOW
+#define BASH_PS1 "\\[\\033[1;33m\\]\\$\\[\\033[0m\\] "
+
+// ferramental para evdev
+#define BITS_PER_LONG           (sizeof(unsigned long) * 8)
+#define NBITS(x)                ((((x)-1)/BITS_PER_LONG)+1)
+#define EVDEV_OFF(x)            ((x)%BITS_PER_LONG)
+#define EVDEV_LONG(x)           ((x)/BITS_PER_LONG)
+#define test_bit(bit, array)    ((array[EVDEV_LONG(bit)] >> EVDEV_OFF(bit)) & 1)
 
 typedef struct
 {
@@ -176,6 +186,109 @@ void termina_bash(int sinal)
                 break;
         }
     }
+}
+
+// função inspirada em:
+// https://github.com/mirror/busybox/blob/1_35_0/util-linux/acpid.c
+// com a restrição de dispositivos de:
+// https://github.com/libsdl-org/SDL/blob/release-2.0.22/src/core/linux/SDL_evdev_capabilities.h
+// https://github.com/libsdl-org/SDL/blob/release-2.0.22/src/joystick/linux/SDL_sysjoystick.c
+void monitora_evdev(void)
+{
+    int fd, pronto = 0;
+    unsigned int i = 0, nfd = 0;
+    unsigned long evbit[NBITS(EV_MAX)] = { 0 };
+    unsigned long keybit[NBITS(KEY_MAX)] = { 0 };
+    struct pollfd *pfd = NULL;
+    struct input_event ev;
+    char *dev_ev;
+
+    for (;;)
+    {
+        if (asprintf(&dev_ev, "/dev/input/event%u", i) < 0)
+        {
+            perror("asprintf");
+            continue;
+        }
+        i++;
+
+        fd = open(dev_ev, O_RDONLY);
+        free(dev_ev);
+        if (fd < 0)
+        {
+            if (nfd == 0)
+            {
+                return;
+            }
+
+            break;
+        }
+
+        if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) >= 0 &&
+            test_bit(EV_KEY, evbit) &&
+            ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybit)), keybit) >= 0 &&
+            test_bit(KEY_POWER, keybit) &&
+            (pfd = realloc(pfd, sizeof(*pfd) * (nfd + 1))) != NULL)
+        {
+            pfd[nfd].fd = fd;
+            pfd[nfd].events = POLLIN;
+            pfd[nfd].revents = 0;
+            nfd++;
+        }
+        else
+        {
+            close(fd);
+        }
+    }
+
+    while (pronto == 0)
+    {
+        if (poll(pfd, nfd, -1) < 0)
+        {
+            perror("poll");
+            continue;
+        }
+
+        for (i = 0; i < nfd; i++)
+        {
+            if (pfd[i].revents & (POLLHUP|POLLERR))
+            {
+                // dispositivo desconectado ou erro: não monitorar mais
+                close(pfd[i].fd);
+                nfd--;
+                for (; i < nfd; i++)
+                {
+                    pfd[i].fd = pfd[i + 1].fd;
+                }
+
+                // poll() novamente
+                break;
+            }
+
+            if (pfd[i].revents & POLLIN)
+            {
+                if (read(pfd[i].fd, &ev, sizeof(ev)) != sizeof(ev))
+                {
+                    continue;
+                }
+
+                if (ev.type == EV_KEY && ev.value == 1 && ev.code == KEY_POWER)
+                {
+                    pronto = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    while (nfd--)
+    {
+        close(pfd[nfd].fd);
+    }
+
+    free(pfd);
+
+    kill(getppid(), SIGTERM);
 }
 
 int monta(struct libmnt_context *cxt, ponto_mnt pm)
@@ -453,6 +566,13 @@ int main(int argc, char **argv)
         }
 
         close(fd);
+    }
+
+    if (fork() == 0)
+    {
+        prctl(PR_SET_NAME, "acpid");
+        monitora_evdev();
+        exit(0);
     }
 
     configura_terminal();
