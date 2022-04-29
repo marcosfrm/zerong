@@ -586,7 +586,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (asprintf(&ker, "%s/%s", "/usr/lib/modules", ut.release) < 0)
+    if (asprintf(&ker, "/usr/lib/modules/%s", ut.release) < 0)
     {
         perror("asprintf");
         return 1;
@@ -623,7 +623,7 @@ int main(int argc, char **argv)
 
         if (stat("/etc/zerong-release", &sb) == 0 &&
             strftime(dtmp, sizeof(dtmp), "%Y%m%d", localtime(&sb.st_mtime)) > 0 &&
-            asprintf(&versao, "%s %s (%s)", "ZeroNG™", dtmp, ut.release) > 0)
+            asprintf(&versao, "ZeroNG™ %s (%s)", dtmp, ut.release) > 0)
         {
             ;
         }
