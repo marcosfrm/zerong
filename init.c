@@ -568,17 +568,17 @@ int main(int argc, char **argv)
         close(fd);
     }
 
+    configura_terminal();
+    // agora podemos usar acentos e caracteres especiais \o/
+    // antes de lista_dir_mod() pois consideramos que não existirão módulos DRM
+    // os drivers vesafb/efifb/simpledrm (built-in) são suficientes
+
     if (fork() == 0)
     {
         prctl(PR_SET_NAME, "acpid");
         monitora_evdev();
         exit(0);
     }
-
-    configura_terminal();
-    // agora podemos usar acentos e caracteres especiais \o/
-    // antes de lista_dir_mod() pois consideramos que não existirão módulos DRM
-    // os drivers vesafb/efifb/simpledrm (built-in) são suficientes
 
     if (uname(&ut) != 0)
     {
