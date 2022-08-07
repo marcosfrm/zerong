@@ -61,7 +61,7 @@ pid_t bpid;
 
 int desliga = 0;
 
-// intervalo máximo 0-9
+// intervalo máximo: 0-9
 char *cor_ansi(int min, int max)
 {
     char ecode[11];
@@ -79,7 +79,7 @@ void saudacao(void)
     struct tm *tm;
     char *msg;
     size_t len;
-    int i, div, pad;
+    int i, res, pad;
 
     agora = time(NULL);
     // máquinas com Windows são mais populares, por isso gmtime() ao invés de localtime(),
@@ -107,7 +107,7 @@ void saudacao(void)
     // não há caracteres especiais na string, senão teria que usar wchar_t e tralha relacionada
     len = strlen(msg) + 2; // dois espaços
     // 45 colunas
-    div = (45 - len) % 2;
+    res = (45 - len) % 2;
     pad = (45 - len) / 2;
 
     for (i = 0; i < pad; i++)
@@ -117,7 +117,7 @@ void saudacao(void)
 
     printf(ANSI_BOLD_YELLOW " %s ", msg);
 
-    for (i = 0; i < (pad + div); i++)
+    for (i = 0; i < (pad + res); i++)
     {
         printf("%s~", cor_ansi(1, 7));
     }
