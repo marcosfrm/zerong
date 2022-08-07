@@ -61,6 +61,72 @@ pid_t bpid;
 
 int desliga = 0;
 
+// intervalo máximo 0-9
+char *cor_ansi(int min, int max)
+{
+    char ecode[11];
+    unsigned int cor;
+
+    cor = min + rand() / (RAND_MAX / (max - min + 1) + 1);
+    snprintf(ecode, sizeof(ecode), "\033[1;3%um", cor);
+
+    return strdup(ecode);
+}
+
+void saudacao(void)
+{
+    time_t agora;
+    struct tm *tm;
+    char *msg;
+    size_t len;
+    int i, div, pad;
+
+    agora = time(NULL);
+    // máquinas com Windows são mais populares, por isso gmtime() ao invés de localtime(),
+    // caso o RTC esteja em UTC, o horário estará adiantado 3h... paciência :(
+    tm = gmtime(&agora);
+    srand(agora);
+
+    if (tm->tm_hour >= 0 && tm->tm_hour < 6)
+    {
+        msg = strdup("Boa madrugada!");
+    }
+    else if (tm->tm_hour >= 6 && tm->tm_hour < 12)
+    {
+        msg = strdup("Bom dia!");
+    }
+    else if (tm->tm_hour >= 12 && tm->tm_hour < 18)
+    {
+        msg = strdup("Boa tarde!");
+    }
+    else
+    {
+        msg = strdup("Boa noite!");
+    }
+
+    // não há caracteres especiais na string, senão teria que usar wchar_t e tralha relacionada
+    len = strlen(msg) + 2; // dois espaços
+    // 45 colunas
+    div = (45 - len) % 2;
+    pad = (45 - len) / 2;
+
+    for (i = 0; i < pad; i++)
+    {
+        printf("%s~", cor_ansi(1, 7));
+    }
+
+    printf(ANSI_BOLD_YELLOW " %s ", msg);
+
+    for (i = 0; i < (pad + div); i++)
+    {
+        printf("%s~", cor_ansi(1, 7));
+    }
+
+    printf(ANSI_RESET "\n\n");
+
+    free(msg);
+}
+
 void configura_terminal(void)
 {
     struct termios tty;
@@ -631,6 +697,8 @@ int main(int argc, char **argv)
         {
             versao = strdup("ZeroNG™");
         }
+
+        saudacao();
 
         printf(ANSI_BOLD_YELLOW "─────────────────────────────────────────────" ANSI_RESET "\n");
         printf(ANSI_BOLD_YELLOW "%s" ANSI_RESET "\n", versao);
