@@ -160,8 +160,8 @@ void configura_terminal(void)
     kfont_init(NULL, &kfont_ctx);
     if (kfont_ctx != NULL)
     {
-        // apenas fontes 8x16 funcionam sem drivers DRM
-        kfont_load_font(kfont_ctx, fd, "ter-116b", 0, 0, 0, 0);
+        // requer driver DRM
+        kfont_load_font(kfont_ctx, fd, "ter-120b", 0, 0, 0, 0);
         kfont_free(kfont_ctx);
     }
 
@@ -453,7 +453,7 @@ void carrega_mod(char *arquivo)
     r = kmod_module_new_from_path(ctx, arquivo, &mod);
     if (r == 0)
     {
-        fprintf(stderr, ANSI_BOLD_CYAN "carregando módulo %-16s... " ANSI_RESET, kmod_module_get_name(mod));
+        fprintf(stderr, ANSI_BOLD_CYAN "carregando modulo %-16s... " ANSI_RESET, kmod_module_get_name(mod));
         // sem KMOD_PROBE_IGNORE_LOADED, ignora módulos já carregados (ou sendo carregados)
         // sem KMOD_PROBE_FAIL_ON_LOADED, retorna 0 nesse caso
         r = kmod_module_probe_insert_module(mod, 0, NULL, NULL, NULL, NULL);
@@ -634,18 +634,6 @@ int main(int argc, char **argv)
         close(fd);
     }
 
-    configura_terminal();
-    // agora podemos usar acentos e caracteres especiais \o/
-    // antes de lista_dir_mod() pois consideramos que não existirão módulos DRM
-    // os drivers vesafb/efifb/simpledrm (built-in) são suficientes
-
-    if (fork() == 0)
-    {
-        prctl(PR_SET_NAME, "acpid");
-        monitora_evdev();
-        exit(0);
-    }
-
     if (uname(&ut) != 0)
     {
         perror("uname");
@@ -660,6 +648,16 @@ int main(int argc, char **argv)
 
     lista_dir_mod(ker);
     free(ker);
+
+    configura_terminal();
+    // agora podemos usar acentos e caracteres especiais \o/
+
+    if (fork() == 0)
+    {
+        prctl(PR_SET_NAME, "acpid");
+        monitora_evdev();
+        exit(0);
+    }
 
     printf("\n");
     fflush(stdout);
