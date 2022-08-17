@@ -168,28 +168,30 @@ void configura_terminal(void)
     // kernel cria variável foo=bar para cada opção de boot contendo atribuição
     // sem atribuição, passa a ser argumento do init
     opt = getenv("KEYB");
-    if (opt != NULL)
+    if (opt == NULL)
     {
-        kbd_ctx = kbdfile_new(NULL);
-        if (kbd_ctx != NULL && kbdfile_find(opt, kbddir, kbdsuf, kbd_ctx) == 0)
-        {
-            lk_ctx = lk_init();
-            if (lk_ctx != NULL)
-            {
-                lk_set_parser_flags(lk_ctx, LK_FLAG_PREFER_UNICODE);
-                if (lk_parse_keymap(lk_ctx, kbd_ctx) == 0)
-                {
-                    lk_load_keymap(lk_ctx, fd, K_UNICODE);
-                }
+        opt = "br";
+    }
 
-                lk_free(lk_ctx);
+    kbd_ctx = kbdfile_new(NULL);
+    if (kbd_ctx != NULL && kbdfile_find(opt, kbddir, kbdsuf, kbd_ctx) == 0)
+    {
+        lk_ctx = lk_init();
+        if (lk_ctx != NULL)
+        {
+            lk_set_parser_flags(lk_ctx, LK_FLAG_PREFER_UNICODE);
+            if (lk_parse_keymap(lk_ctx, kbd_ctx) == 0)
+            {
+                lk_load_keymap(lk_ctx, fd, K_UNICODE);
             }
 
-            kbdfile_free(kbd_ctx);
+            lk_free(lk_ctx);
         }
 
-        unsetenv("KEYB");
+        kbdfile_free(kbd_ctx);
     }
+
+    unsetenv("KEYB");
 
     dup2(fd, STDIN_FILENO);
     dup2(fd, STDOUT_FILENO);
