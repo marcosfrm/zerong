@@ -77,7 +77,7 @@ void saudacao(void)
 {
     time_t agora;
     struct tm *tm;
-    char *msg;
+    const char *msg;
     size_t len;
     int i, res, pad;
 
@@ -89,19 +89,19 @@ void saudacao(void)
 
     if (tm->tm_hour >= 0 && tm->tm_hour < 6)
     {
-        msg = strdup("Boa madrugada!");
+        msg = "Boa madrugada!";
     }
     else if (tm->tm_hour >= 6 && tm->tm_hour < 12)
     {
-        msg = strdup("Bom dia!");
+        msg = "Bom dia!";
     }
     else if (tm->tm_hour >= 12 && tm->tm_hour < 18)
     {
-        msg = strdup("Boa tarde!");
+        msg = "Boa tarde!";
     }
     else
     {
-        msg = strdup("Boa noite!");
+        msg = "Boa noite!";
     }
 
     // não há caracteres especiais na string, senão teria que usar wchar_t e tralha relacionada
@@ -123,8 +123,6 @@ void saudacao(void)
     }
 
     printf(ANSI_RESET "\n\n");
-
-    free(msg);
 }
 
 void configura_terminal(void)
