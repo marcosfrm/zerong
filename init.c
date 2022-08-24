@@ -1,6 +1,7 @@
 #define _FILE_OFFSET_BITS 64
 #define _GNU_SOURCE
 
+#include <cpuid.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -41,6 +42,7 @@
 // ANSI_BOLD_YELLOW
 #define BASH_PS1 "\\[\\033[1;33m\\]\\$\\[\\033[0m\\] "
 
+#define ARRAYSIZE(x)            (sizeof(x)/sizeof((x)[0]))
 // ferramental para evdev
 #define BITS_PER_LONG           (sizeof(unsigned long) * 8)
 #define NBITS(x)                ((((x)-1)/BITS_PER_LONG)+1)
@@ -60,6 +62,19 @@ typedef struct
 pid_t bpid;
 
 int desliga = 0;
+
+int eh_vm(void)
+{
+    unsigned int eax, ebx, ecx, edx;
+
+    if (__get_cpuid(1, &eax, &ebx, &ecx, &edx) == 0)
+    {
+        return 1;
+    }
+
+    // Hypervisor Present Bit: bit 31 do registrador ECX
+    return (ecx & (1U << 31)) ? 1 : 0;
+}
 
 // intervalo máximo: 0-9
 char *cor_ansi(int min, int max)
@@ -438,11 +453,22 @@ unsigned int desmonta_tudo(struct libmnt_context *cxt)
     return err;
 }
 
-void carrega_mod(char *arquivo)
+void carrega_mod(char *arquivo, int vm)
 {
+    // em hardware não virtualizado, pulamos estes módulos
+    const char *vm_mod[] =
+    {
+        "hyperv_drm",
+        "hyperv_keyboard",
+        "hv_storvsc",
+        "hv_vmbus",
+        "vmwgfx",
+        "scsi_transport_fc", // dependência de hv_storvsc
+    };
+    const char *nome;
     struct kmod_ctx *ctx;
     struct kmod_module *mod;
-    int r;
+    int r, i, pula = 0;
 
     ctx = kmod_new(NULL, NULL);
     if (ctx == NULL)
@@ -453,24 +479,41 @@ void carrega_mod(char *arquivo)
     r = kmod_module_new_from_path(ctx, arquivo, &mod);
     if (r == 0)
     {
-        fprintf(stderr, ANSI_BOLD_CYAN "carregando modulo %-18s... " ANSI_RESET, kmod_module_get_name(mod));
-        // sem KMOD_PROBE_IGNORE_LOADED, ignora módulos já carregados (ou sendo carregados)
-        // sem KMOD_PROBE_FAIL_ON_LOADED, retorna 0 nesse caso
-        r = kmod_module_probe_insert_module(mod, 0, NULL, NULL, NULL, NULL);
-        if (r == 0)
+        nome = kmod_module_get_name(mod);
+
+        if (vm == 0)
         {
-            fprintf(stderr, ANSI_BOLD_GREEN "sucesso" ANSI_RESET "\n");
+            for (i = 0; i < ARRAYSIZE(vm_mod); i++)
+            {
+                if (strcmp(vm_mod[i], nome) == 0)
+                {
+                    pula = 1;
+                    break;
+                }
+            }
         }
-        // módulo crc32c_intel retorna -ENODEV em processadores sem SSE4.2 (anteriores aos Nehalem/Bulldozer)
-        // não é crítico, pois crc32c_generic (builtin no kernel do Fedora) funciona em qualquer cacareco...
-        // geralmente -ENODEV significa hardware sem suporte
-        else if (r == -ENODEV)
+
+        if (pula == 0)
         {
-            fprintf(stderr, ANSI_BOLD_WHITE "sem sup" ANSI_RESET "\n");
-        }
-        else
-        {
-            fprintf(stderr, ANSI_BOLD_RED "falha (%s)" ANSI_RESET "\n", strerror(-r));
+            fprintf(stderr, ANSI_BOLD_CYAN "carregando modulo %-18s... " ANSI_RESET, nome);
+            // sem KMOD_PROBE_IGNORE_LOADED, ignora módulos já carregados (ou sendo carregados)
+            // sem KMOD_PROBE_FAIL_ON_LOADED, retorna 0 nesse caso
+            r = kmod_module_probe_insert_module(mod, 0, NULL, NULL, NULL, NULL);
+            if (r == 0)
+            {
+                fprintf(stderr, ANSI_BOLD_GREEN "sucesso" ANSI_RESET "\n");
+            }
+            // módulo crc32c_intel retorna -ENODEV em processadores sem SSE4.2 (anteriores aos Nehalem/Bulldozer)
+            // não é crítico, pois crc32c_generic (builtin no kernel do Fedora) funciona em qualquer cacareco...
+            // geralmente -ENODEV significa hardware sem suporte
+            else if (r == -ENODEV)
+            {
+                fprintf(stderr, ANSI_BOLD_WHITE "sem sup" ANSI_RESET "\n");
+            }
+            else
+            {
+                fprintf(stderr, ANSI_BOLD_RED "falha (%s)" ANSI_RESET "\n", strerror(-r));
+            }
         }
 
         kmod_module_unref(mod);
@@ -484,6 +527,7 @@ void lista_dir_mod(char *base)
     DIR *pasta;
     struct dirent *ent;
     char *caminho, *ptr;
+    int vm = eh_vm();
 
     pasta = opendir(base);
     if (pasta == NULL)
@@ -516,7 +560,7 @@ void lista_dir_mod(char *base)
             ptr = strstr(ent->d_name, ".ko");
             if (ptr != NULL && (ptr[3] == '\0' || ptr[3] == '.'))
             {
-                carrega_mod(caminho);
+                carrega_mod(caminho, vm);
             }
         }
 
@@ -557,11 +601,10 @@ int main(int argc, char **argv)
     const char *dev_links[][2] =
     {
         // alvo               link
-        { "/proc/self/fd",   "/dev/fd" },
-        { "/proc/self/fd/0", "/dev/stdin" },
+        { "/proc/self/fd",   "/dev/fd"     },
+        { "/proc/self/fd/0", "/dev/stdin"  },
         { "/proc/self/fd/1", "/dev/stdout" },
         { "/proc/self/fd/2", "/dev/stderr" },
-        { NULL, NULL },
     };
 
     if (getpid() != 1)
@@ -592,7 +635,7 @@ int main(int argc, char **argv)
     printf("\n");
     fflush(stdout);
 
-    for (i = 0; i < sizeof(lista)/sizeof(lista[0]); i++)
+    for (i = 0; i < ARRAYSIZE(lista); i++)
     {
         if (monta(cxt, lista[i]) != 0)
         {
@@ -605,7 +648,7 @@ int main(int argc, char **argv)
         monta(cxt, efi[0]);
     }
 
-    for (i = 0; dev_links[i][0] != NULL; i++)
+    for (i = 0; i < ARRAYSIZE(dev_links); i++)
     {
         if (symlink(dev_links[i][0], dev_links[i][1]) != 0)
         {
