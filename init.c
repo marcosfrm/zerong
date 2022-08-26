@@ -462,6 +462,7 @@ void carrega_mod(char *arquivo, int vm)
         "hyperv_keyboard",
         "hv_storvsc",
         "hv_vmbus",
+        "qxl",
         "vmwgfx",
         "scsi_transport_fc", // dependência de hv_storvsc
     };
