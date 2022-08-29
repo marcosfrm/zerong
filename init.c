@@ -77,15 +77,12 @@ int eh_vm(void)
 }
 
 // intervalo máximo: 0-9
-char *cor_ansi(int min, int max)
+void cor_ansi(int min, int max, char *buf, size_t buflen)
 {
-    char ecode[11];
     unsigned int cor;
 
     cor = min + rand() / (RAND_MAX / (max - min + 1) + 1);
-    snprintf(ecode, sizeof(ecode), "\033[1;3%um", cor);
-
-    return strdup(ecode);
+    snprintf(buf, buflen, "\033[1;3%um", cor);
 }
 
 void saudacao(void)
@@ -93,6 +90,7 @@ void saudacao(void)
     time_t agora;
     struct tm *tm;
     const char *msg;
+    char ecode[11];
     size_t len;
     int i, res, pad;
 
@@ -127,14 +125,16 @@ void saudacao(void)
 
     for (i = 0; i < pad; i++)
     {
-        printf("%s~", cor_ansi(1, 7));
+        cor_ansi(1, 7, ecode, sizeof(ecode));
+        printf("%s~", ecode);
     }
 
     printf(ANSI_BOLD_YELLOW " %s ", msg);
 
     for (i = 0; i < (pad + res); i++)
     {
-        printf("%s~", cor_ansi(1, 7));
+        cor_ansi(1, 7, ecode, sizeof(ecode));
+        printf("%s~", ecode);
     }
 
     printf(ANSI_RESET "\n\n");
