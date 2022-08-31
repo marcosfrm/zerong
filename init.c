@@ -715,7 +715,7 @@ int main(int argc, char **argv)
 
     if (bpid == 0)
     {
-        struct stat sb;
+        FILE *fp;
         char *versao;
         char dtmp[9];
 
@@ -729,8 +729,9 @@ int main(int argc, char **argv)
             perror("ioctl TIOCSCTTY");
         }
 
-        if (stat("/etc/zerong-release", &sb) == 0 &&
-            strftime(dtmp, sizeof(dtmp), "%Y%m%d", localtime(&sb.st_mtime)) > 0 &&
+        if ((fp = fopen("/etc/zerong-release", "r")) != NULL &&
+            fgets(dtmp, sizeof(dtmp), fp) != NULL &&
+            fclose(fp) == 0 &&
             asprintf(&versao, "ZeroNG™ %s (%s)", dtmp, ut.release) > 0)
         {
             ;
