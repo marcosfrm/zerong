@@ -60,7 +60,7 @@ typedef struct
 
 // pid do bash
 pid_t bpid;
-
+int virt;
 int desliga = 0;
 
 int eh_vm(void)
@@ -453,7 +453,7 @@ unsigned int desmonta_tudo(struct libmnt_context *cxt)
     return err;
 }
 
-void carrega_mod(char *arquivo, int vm)
+void carrega_mod(char *arquivo)
 {
     // em hardware não virtualizado, pulamos estes módulos
     const char *vm_mod[] =
@@ -482,7 +482,7 @@ void carrega_mod(char *arquivo, int vm)
     {
         nome = kmod_module_get_name(mod);
 
-        if (vm == 0)
+        if (virt == 0)
         {
             for (i = 0; i < ARRAYSIZE(vm_mod); i++)
             {
@@ -528,7 +528,6 @@ void lista_dir_mod(char *base)
     DIR *pasta;
     struct dirent *ent;
     char *caminho, *ptr;
-    int vm = eh_vm();
 
     pasta = opendir(base);
     if (pasta == NULL)
@@ -561,7 +560,7 @@ void lista_dir_mod(char *base)
             ptr = strstr(ent->d_name, ".ko");
             if (ptr != NULL && (ptr[3] == '\0' || ptr[3] == '.'))
             {
-                carrega_mod(caminho, vm);
+                carrega_mod(caminho);
             }
         }
 
@@ -623,6 +622,7 @@ int main(int argc, char **argv)
     }
     sigaction(SIGTERM, &acao, NULL);
 
+    virt = eh_vm();
     umask(0022);
 
     mnt_init_debug(0);
