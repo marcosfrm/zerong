@@ -119,9 +119,9 @@ void saudacao(void)
 
     // não há caracteres especiais na string, senão teria que usar wchar_t e tralha relacionada
     len = strlen(msg) + 2; // dois espaços
-    // 47 colunas
-    res = (47 - len) % 2;
-    pad = (47 - len) / 2;
+    // 48 colunas
+    res = (48 - len) % 2;
+    pad = (48 - len) / 2;
 
     for (i = 0; i < pad; i++)
     {
@@ -496,7 +496,7 @@ void carrega_mod(char *arquivo)
 
         if (pula == 0)
         {
-            fprintf(stderr, ANSI_BOLD_CYAN "carregando modulo %-18s... " ANSI_RESET, nome);
+            fprintf(stderr, ANSI_BOLD_CYAN "carregando modulo %-19s... " ANSI_RESET, nome);
             // sem KMOD_PROBE_IGNORE_LOADED, ignora módulos já carregados (ou sendo carregados)
             // sem KMOD_PROBE_FAIL_ON_LOADED, retorna 0 nesse caso
             r = kmod_module_probe_insert_module(mod, 0, NULL, NULL, NULL, NULL);
@@ -743,9 +743,9 @@ int main(int argc, char **argv)
 
         saudacao();
 
-        printf(ANSI_BOLD_YELLOW "───────────────────────────────────────────────" ANSI_RESET "\n");
+        printf(ANSI_BOLD_YELLOW "────────────────────────────────────────────────" ANSI_RESET "\n");
         printf(ANSI_BOLD_YELLOW "%s" ANSI_RESET "\n", versao);
-        printf(ANSI_BOLD_YELLOW "───────────────────────────────────────────────" ANSI_RESET "\n\n");
+        printf(ANSI_BOLD_YELLOW "────────────────────────────────────────────────" ANSI_RESET "\n\n");
         printf(ANSI_BOLD_YELLOW "→ Instruções: " ANSI_RESET);
         printf(ANSI_BOLD_MAGENTA "`ajuda`" ANSI_RESET "\n\n");
         fflush(stdout);
