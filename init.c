@@ -29,7 +29,6 @@
 #include <kfont.h>
 #include <libkmod.h>
 #include <libmount/libmount.h>
-#include <proc/readproc.h>
 
 #define ANSI_BOLD_WHITE   "\033[1;37m"
 #define ANSI_BOLD_CYAN    "\033[1;36m"
@@ -212,42 +211,6 @@ void configura_terminal(void)
     if (fd > STDERR_FILENO)
     {
         close(fd);
-    }
-}
-
-// sem o ntfs-3g, esta função pode ser substituída por kill(-1, SIGKILL)
-void mata_processos(void)
-{
-    PROCTAB *proc;
-    proc_t *info;
-
-    proc = openproc(PROC_FILLSTAT);
-    if (proc != NULL)
-    {
-        while ((info = readproc(proc, NULL)) != NULL)
-        {
-            // com ppid 0: init/kthreadd
-            // com ppid 2: processos do kernel
-            if (info->ppid != 0 &&
-                info->ppid != 2 &&
-                strcmp(info->cmd, "mount.ntfs") != 0 &&
-                strcmp(info->cmd, "mount.ntfs-3g") != 0 &&
-                strcmp(info->cmd, "ntfs-3g") != 0)
-            {
-                // desnecessário verificar se é defunto: kill() retorna 0 igual
-                if (kill(info->tid, SIGKILL) == 0)
-                {
-                    while (waitpid(info->tid, NULL, 0) < 0)
-                    {
-                        continue;
-                    }
-                }
-            }
-
-            freeproc(info);
-        }
-
-        closeproc(proc);
     }
 }
 
@@ -769,8 +732,7 @@ int main(int argc, char **argv)
     {
         if (wpid == bpid)
         {
-            mata_processos();
-            break;
+            kill(-1, SIGKILL);
         }
     }
 
