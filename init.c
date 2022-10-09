@@ -29,6 +29,7 @@
 #include <kfont.h>
 #include <libkmod.h>
 #include <libmount/libmount.h>
+#include <libudev.h>
 
 #define ANSI_BOLD_WHITE   "\033[1;37m"
 #define ANSI_BOLD_CYAN    "\033[1;36m"
@@ -363,9 +364,14 @@ unsigned int desmonta_tudo(struct libmnt_context *cxt)
     struct libmnt_table *tab;
     struct libmnt_iter *itr;
     struct libmnt_fs *fs;
-    const char *mntdir;
-    unsigned int err = 0;
-    int r;
+    struct udev *ucxt;
+    struct udev_enumerate *ue;
+    struct udev_list_entry *dev;
+    struct udev_device *blkdev, *usbdev;
+    const char *mntdir, *devtype;
+    char *syspath;
+    unsigned int err = 0, usbc = 0;
+    int fd, r;
 
     tab = mnt_new_table();
     if (tab == NULL)
@@ -409,6 +415,78 @@ unsigned int desmonta_tudo(struct libmnt_context *cxt)
 
         mnt_free_iter(itr);
         mnt_unref_fs(fs);
+    }
+
+    // não tendo nada mais montado, tentamos desconectar portas USB usadas por dispositivos de bloco
+    if (err == 0)
+    {
+        ucxt = udev_new();
+        ue = udev_enumerate_new(ucxt);
+        udev_enumerate_add_match_subsystem(ue, "block");
+        udev_enumerate_scan_devices(ue);
+
+        udev_list_entry_foreach(dev, udev_enumerate_get_list_entry(ue))
+        {
+            blkdev = udev_device_new_from_syspath(ucxt, udev_list_entry_get_name(dev));
+            // partições podem não existir mais depois da desconexão do dispositivo pai
+            if (blkdev != NULL)
+            {
+                devtype = udev_device_get_devtype(blkdev);
+
+                // ignorar partições
+                // libudev parece enumerar o dispositivo pai sempre primeiro
+                // por garantia, ainda assim conferimos
+                if (strcmp(devtype, "disk") == 0)
+                {
+                    usbdev = udev_device_get_parent_with_subsystem_devtype(blkdev, "usb", "usb_device");
+                    if (usbdev != NULL)
+                    {
+                        // https://github.com/torvalds/linux/commit/253e05724f9230910344357b1142ad8642ff9f5a
+                        if (asprintf(&syspath, "%s/remove", udev_device_get_syspath(usbdev)) > 0)
+                        {
+                            fd = open(syspath, O_WRONLY);
+                            if (fd >= 0)
+                            {
+                                fprintf(stderr, ANSI_BOLD_CYAN "desconectando porta USB %s (%s)... " ANSI_RESET,
+                                        udev_device_get_sysname(usbdev), udev_device_get_devnode(blkdev));
+                                if (write(fd, "1", 1) == 1)
+                                {
+                                    usbc++;
+                                    fprintf(stderr, ANSI_BOLD_GREEN "sucesso" ANSI_RESET "\n");
+                                }
+                                else
+                                {
+                                    fprintf(stderr, ANSI_BOLD_RED "falha" ANSI_RESET "\n");
+                                }
+
+                                close(fd);
+                            }
+
+                            free(syspath);
+                        }
+
+                        // usbdev é desalocado junto com blkdev
+                    }
+                }
+
+                udev_device_unref(blkdev);
+            }
+        }
+
+        if (usbc != 0)
+        {
+            // alguns segundos para discos externos desligarem
+            for (r = 0; r < 5; r++)
+            {
+                fprintf(stderr, ANSI_BOLD_CYAN ". " ANSI_RESET);
+                sleep(1);
+            }
+
+            fprintf(stderr, "\n");
+        }
+
+        udev_enumerate_unref(ue);
+        udev_unref(ucxt);
     }
 
     mnt_unref_table(tab);
