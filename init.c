@@ -428,7 +428,7 @@ unsigned int desmonta_tudo(struct libmnt_context *cxt)
         udev_list_entry_foreach(dev, udev_enumerate_get_list_entry(ue))
         {
             blkdev = udev_device_new_from_syspath(ucxt, udev_list_entry_get_name(dev));
-            // partições podem não existir mais depois da desconexão do dispositivo pai
+            // partições não existirão mais depois da desconexão do dispositivo pai
             if (blkdev != NULL)
             {
                 devtype = udev_device_get_devtype(blkdev);
@@ -436,7 +436,7 @@ unsigned int desmonta_tudo(struct libmnt_context *cxt)
                 // ignorar partições
                 // libudev parece enumerar o dispositivo pai sempre primeiro
                 // por garantia, ainda assim conferimos
-                if (strcmp(devtype, "disk") == 0)
+                if (devtype != NULL && strcmp(devtype, "disk") == 0)
                 {
                     usbdev = udev_device_get_parent_with_subsystem_devtype(blkdev, "usb", "usb_device");
                     if (usbdev != NULL)
