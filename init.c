@@ -58,10 +58,9 @@ typedef struct
     char *opcoes;
 } ponto_mnt;
 
-// pid do bash
 pid_t bpid;
 int virt;
-int desliga = 0;
+int desliga;
 
 int eh_vm(void)
 {
@@ -359,7 +358,7 @@ int monta(struct libmnt_context *cxt, ponto_mnt pm)
     return r;
 }
 
-unsigned int desmonta_tudo(struct libmnt_context *cxt)
+void desmonta_tudo(struct libmnt_context *cxt)
 {
     struct libmnt_table *tab;
     struct libmnt_iter *itr;
@@ -376,7 +375,7 @@ unsigned int desmonta_tudo(struct libmnt_context *cxt)
     tab = mnt_new_table();
     if (tab == NULL)
     {
-        return 1;
+        return;
     }
 
     if (mnt_table_parse_mtab(tab, NULL) == 0)
@@ -488,10 +487,12 @@ unsigned int desmonta_tudo(struct libmnt_context *cxt)
         udev_enumerate_unref(ue);
         udev_unref(ucxt);
     }
+    else
+    {
+        sync();
+    }
 
     mnt_unref_table(tab);
-
-    return err;
 }
 
 void carrega_mod(char *arquivo)
@@ -794,6 +795,7 @@ int main(int argc, char **argv)
 
         setenv("PATH", "/usr/bin:/usr/sbin", 1);
         setenv("SHELL", "/bin/bash", 1);
+        setenv("EDITOR", "nano", 1);
         setenv("CLICOLOR", "1", 1);
         setenv("HOME", "/root", 1);
         setenv("PS1", BASH_PS1, 1);
@@ -817,11 +819,7 @@ int main(int argc, char **argv)
     printf("\n");
     fflush(stdout);
 
-    if (desmonta_tudo(cxt) != 0)
-    {
-        sync();
-    }
-
+    desmonta_tudo(cxt);
     mnt_free_context(cxt);
     sleep(1);
 
