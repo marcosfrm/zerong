@@ -558,11 +558,26 @@ void carrega_mod(char *arquivo)
     kmod_unref(ctx);
 }
 
+int terminacom(const char *s, const char *f)
+{
+    size_t sl = strlen(s);
+    size_t fl = strlen(f);
+
+    if (sl >= fl && strcmp(s + sl - fl, f) == 0)
+    {
+        return 1;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
 void lista_dir_mod(char *base)
 {
     DIR *pasta;
     struct dirent *ent;
-    char *caminho, *ptr;
+    char *caminho;
 
     pasta = opendir(base);
     if (pasta == NULL)
@@ -592,8 +607,10 @@ void lista_dir_mod(char *base)
         }
         else if (ent->d_type == DT_REG)
         {
-            ptr = strstr(ent->d_name, ".ko");
-            if (ptr != NULL && (ptr[3] == '\0' || ptr[3] == '.'))
+            if (terminacom(ent->d_name, ".ko") == 1 ||
+                terminacom(ent->d_name, ".ko.gz") == 1 ||
+                terminacom(ent->d_name, ".ko.xz") == 1 ||
+                terminacom(ent->d_name, ".ko.zst") == 1)
             {
                 carrega_mod(caminho);
             }
