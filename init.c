@@ -180,7 +180,7 @@ void configura_terminal(void)
     // kernel cria variável foo=bar para cada opção de boot contendo atribuição
     // sem atribuição, passa a ser argumento do init
     opt = getenv("KEYB");
-    if (opt == NULL)
+    if (opt == NULL || opt[0] == '\0')
     {
         opt = "br";
     }
@@ -501,7 +501,7 @@ void carrega_mod(char *arquivo)
         "vmwgfx",
         "scsi_transport_fc", // dependência de hv_storvsc
     };
-    const char *nome;
+    char *nome;
     struct kmod_ctx *ctx;
     struct kmod_module *mod;
     int r, i, pula = 0;
@@ -515,7 +515,7 @@ void carrega_mod(char *arquivo)
     r = kmod_module_new_from_path(ctx, arquivo, &mod);
     if (r == 0)
     {
-        nome = kmod_module_get_name(mod);
+        nome = strdup(kmod_module_get_name(mod));
 
         if (virt == 0)
         {
@@ -531,7 +531,14 @@ void carrega_mod(char *arquivo)
 
         if (pula == 0)
         {
-            fprintf(stderr, ANSI_BOLD_CYAN "carregando modulo %-19s... " ANSI_RESET, nome);
+            if (strlen(nome) > 20)
+            {
+                nome[17] = '\0';
+                strcat(nome, "...");
+            }
+
+            fprintf(stderr, ANSI_BOLD_CYAN "carregando modulo %-20s - " ANSI_RESET, nome);
+            // no segundo parâmetro (flags):
             // sem KMOD_PROBE_IGNORE_LOADED, ignora módulos já carregados (ou sendo carregados)
             // sem KMOD_PROBE_FAIL_ON_LOADED, retorna 0 nesse caso
             r = kmod_module_probe_insert_module(mod, 0, NULL, NULL, NULL, NULL);
@@ -539,8 +546,6 @@ void carrega_mod(char *arquivo)
             {
                 fprintf(stderr, ANSI_BOLD_GREEN "sucesso" ANSI_RESET "\n");
             }
-            // módulo crc32c_intel retorna -ENODEV em processadores sem SSE4.2 (anteriores aos Nehalem/Bulldozer)
-            // não é crítico, pois crc32c_generic (builtin no kernel do Fedora) funciona em qualquer cacareco...
             // geralmente -ENODEV significa hardware sem suporte
             else if (r == -ENODEV)
             {
@@ -553,6 +558,7 @@ void carrega_mod(char *arquivo)
         }
 
         kmod_module_unref(mod);
+        free(nome);
     }
 
     kmod_unref(ctx);
