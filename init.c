@@ -569,14 +569,7 @@ int terminacom(const char *s, const char *f)
     size_t sl = strlen(s);
     size_t fl = strlen(f);
 
-    if (sl >= fl && strcmp(s + sl - fl, f) == 0)
-    {
-        return 1;
-    }
-    else
-    {
-        return 0;
-    }
+    return sl >= fl && strcmp(s + sl - fl, f) == 0;
 }
 
 void lista_dir_mod(char *base)
