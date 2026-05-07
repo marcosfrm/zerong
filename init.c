@@ -1,12 +1,12 @@
 #define _FILE_OFFSET_BITS 64
 #define _GNU_SOURCE
 
-#include <cpuid.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/input.h>
 #include <linux/kd.h>
+#include <linux/netlink.h>
 #include <locale.h>
 #include <poll.h>
 #include <signal.h>
@@ -16,6 +16,7 @@
 #include <sys/ioctl.h>
 #include <sys/prctl.h>
 #include <sys/reboot.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
@@ -59,21 +60,7 @@ typedef struct
 } ponto_mnt;
 
 pid_t bpid;
-int virt;
-int desliga;
-
-int eh_vm(void)
-{
-    unsigned int eax, ebx, ecx, edx;
-
-    if (__get_cpuid(1, &eax, &ebx, &ecx, &edx) == 0)
-    {
-        return 1;
-    }
-
-    // Hypervisor Present Bit: bit 31 do registrador ECX
-    return (ecx & (1U << 31)) ? 1 : 0;
-}
+int desliga, pipefd[2];
 
 // intervalo máximo: 0-9
 void cor_ansi(int min, int max, char *buf, size_t buflen)
@@ -232,6 +219,7 @@ void termina_bash(int sinal)
     }
 }
 
+
 // função inspirada em:
 // https://github.com/mirror/busybox/blob/1_35_0/util-linux/acpid.c
 // com a restrição de dispositivos de:
@@ -240,50 +228,29 @@ void termina_bash(int sinal)
 void monitora_evdev(void)
 {
     int fd, pronto = 0;
-    unsigned int i = 0, nfd = 0;
+    unsigned int i, j, nfd = 0;
     unsigned long evbit[NBITS(EV_MAX)] = { 0 };
     unsigned long keybit[NBITS(KEY_MAX)] = { 0 };
-    struct pollfd *pfd = NULL;
+    struct pollfd *pfd, *tmp;
     struct input_event ev;
-    char *dev_ev;
+    char buf[1024], dev_ev[64];
+    char *ptr;
+    ssize_t n;
 
-    for (;;)
+    // fechar escrita
+    close(pipefd[1]);
+
+    pfd = malloc(sizeof(*pfd));
+    if (pfd == NULL)
     {
-        if (asprintf(&dev_ev, "/dev/input/event%u", i) < 0)
-        {
-            perror("asprintf");
-            continue;
-        }
-        i++;
-
-        fd = open(dev_ev, O_RDONLY);
-        free(dev_ev);
-        if (fd < 0)
-        {
-            if (nfd == 0)
-            {
-                return;
-            }
-
-            break;
-        }
-
-        if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) >= 0 &&
-            test_bit(EV_KEY, evbit) &&
-            ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybit)), keybit) >= 0 &&
-            test_bit(KEY_POWER, keybit) &&
-            (pfd = realloc(pfd, sizeof(*pfd) * (nfd + 1))) != NULL)
-        {
-            pfd[nfd].fd = fd;
-            pfd[nfd].events = POLLIN;
-            pfd[nfd].revents = 0;
-            nfd++;
-        }
-        else
-        {
-            close(fd);
-        }
+        perror("malloc");
+        return;
     }
+
+    pfd[nfd].fd = pipefd[0];
+    pfd[nfd].events = POLLIN;
+    pfd[nfd].revents = 0;
+    nfd++;
 
     while (pronto == 0)
     {
@@ -297,31 +264,91 @@ void monitora_evdev(void)
         {
             if (pfd[i].revents & (POLLHUP|POLLERR))
             {
-                // dispositivo desconectado ou erro: não monitorar mais
-                close(pfd[i].fd);
-                nfd--;
-                for (; i < nfd; i++)
+                if (i == 0)
                 {
-                    pfd[i].fd = pfd[i + 1].fd;
+                    // problema no pipe, fatal
+                    pronto = 2;
+                }
+                else
+                {
+                    // dispositivo desconectado ou erro: não monitorar mais
+                    close(pfd[i].fd);
+                    nfd--;
+                    for (j = i; j < nfd; j++)
+                    {
+                        pfd[j] = pfd[j + 1];
+                    }
+
+                    // poll() novamente
                 }
 
-                // poll() novamente
                 break;
             }
 
             if (pfd[i].revents & POLLIN)
             {
-                if (read(pfd[i].fd, &ev, sizeof(ev)) != sizeof(ev))
+                if (i == 0)
                 {
-                    continue;
-                }
+                    n = read(pfd[i].fd, buf, sizeof(buf));
+                    if (n > 0)
+                    {
+                        ptr = buf;
 
-                if (ev.type == EV_KEY && ev.value == 1 && ev.code == KEY_POWER)
+                        while (ptr < buf + n)
+                        {
+                            snprintf(dev_ev, sizeof(dev_ev), "/dev/%s", ptr);
+
+                            fd = open(dev_ev, O_RDONLY);
+                            if (fd < 0)
+                            {
+                                perror("open");
+                            }
+                            else if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) >= 0 &&
+                                     test_bit(EV_KEY, evbit) &&
+                                     ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybit)), keybit) >= 0 &&
+                                     test_bit(KEY_POWER, keybit))
+                            {
+                                tmp = realloc(pfd, sizeof(*pfd) * (nfd + 1));
+                                if (tmp == NULL)
+                                {
+                                    perror("realloc");
+                                    close(fd);
+                                }
+                                else
+                                {
+                                    pfd = tmp;
+                                    pfd[nfd].fd = fd;
+                                    pfd[nfd].events = POLLIN;
+                                    pfd[nfd].revents = 0;
+                                    nfd++;
+
+                                    // continua o loop, pois o novo elemento terá revents zerado
+                                }
+                            }
+                            else
+                            {
+                                close(fd);
+                            }
+
+                            ptr += strlen(ptr) + 1;
+                        }
+                    }
+                }
+                else
                 {
-                    pronto = 1;
-                    break;
+                    if (read(pfd[i].fd, &ev, sizeof(ev)) != sizeof(ev))
+                    {
+                        continue;
+                    }
+
+                    if (ev.type == EV_KEY && ev.value == 1 && ev.code == KEY_POWER)
+                    {
+                        pronto = 1;
+                        break;
+                    }
                 }
             }
+
         }
     }
 
@@ -332,7 +359,10 @@ void monitora_evdev(void)
 
     free(pfd);
 
-    kill(getppid(), SIGTERM);
+    if (pronto == 1)
+    {
+        kill(getppid(), SIGTERM);
+    }
 }
 
 int monta(struct libmnt_context *cxt, ponto_mnt pm)
@@ -488,104 +518,21 @@ void desmonta_tudo(struct libmnt_context *cxt)
     mnt_unref_table(tab);
 }
 
-void carrega_mod(char *arquivo)
+void trigger_coldplug(const char *base)
 {
-    // em hardware não virtualizado, pulamos estes módulos
-    const char *vm_mod[] =
-    {
-        "hyperv_drm",
-        "hyperv_keyboard",
-        "hv_storvsc",
-        "hv_vmbus",
-        "qxl",
-        "vmwgfx",
-        "scsi_transport_fc", // dependência de hv_storvsc
-    };
-    char *nome;
-    struct kmod_ctx *ctx;
-    struct kmod_module *mod;
-    int r, i, pula = 0;
-
-    ctx = kmod_new(NULL, NULL);
-    if (ctx == NULL)
-    {
-        return;
-    }
-
-    r = kmod_module_new_from_path(ctx, arquivo, &mod);
-    if (r == 0)
-    {
-        nome = strdup(kmod_module_get_name(mod));
-
-        if (virt == 0)
-        {
-            for (i = 0; i < ARRAYSIZE(vm_mod); i++)
-            {
-                if (strcmp(vm_mod[i], nome) == 0)
-                {
-                    pula = 1;
-                    break;
-                }
-            }
-        }
-
-        if (pula == 0)
-        {
-            if (strlen(nome) > 20)
-            {
-                nome[17] = '\0';
-                strcat(nome, "...");
-            }
-
-            fprintf(stderr, ANSI_BOLD_CYAN "carregando modulo %-20s - " ANSI_RESET, nome);
-            // no segundo parâmetro (flags):
-            // sem KMOD_PROBE_IGNORE_LOADED, ignora módulos já carregados (ou sendo carregados)
-            // sem KMOD_PROBE_FAIL_ON_LOADED, retorna 0 nesse caso
-            r = kmod_module_probe_insert_module(mod, 0, NULL, NULL, NULL, NULL);
-            if (r == 0)
-            {
-                fprintf(stderr, ANSI_BOLD_GREEN "sucesso" ANSI_RESET "\n");
-            }
-            // geralmente -ENODEV significa hardware sem suporte
-            else if (r == -ENODEV)
-            {
-                fprintf(stderr, ANSI_BOLD_WHITE "sem sup" ANSI_RESET "\n");
-            }
-            else
-            {
-                fprintf(stderr, ANSI_BOLD_RED "falha (%s)" ANSI_RESET "\n", strerror(-r));
-            }
-        }
-
-        kmod_module_unref(mod);
-        free(nome);
-    }
-
-    kmod_unref(ctx);
-}
-
-int terminacom(const char *s, const char *f)
-{
-    size_t sl = strlen(s);
-    size_t fl = strlen(f);
-
-    return sl >= fl && strcmp(s + sl - fl, f) == 0;
-}
-
-void lista_dir_mod(char *base)
-{
-    DIR *pasta;
+    DIR *dir;
     struct dirent *ent;
     char *caminho;
+    int fd;
 
-    pasta = opendir(base);
-    if (pasta == NULL)
+    dir = opendir(base);
+    if (!dir)
     {
         perror("opendir");
         return;
     }
 
-    while ((ent = readdir(pasta)) != NULL)
+    while ((ent = readdir(dir)) != NULL)
     {
         if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
         {
@@ -598,37 +545,171 @@ void lista_dir_mod(char *base)
             continue;
         }
 
-        // tmpfs suporta d_type
         if (ent->d_type == DT_DIR)
         {
-            // recursivo
-            lista_dir_mod(caminho);
+            trigger_coldplug(caminho);
         }
-        else if (ent->d_type == DT_REG)
+        else if (ent->d_type == DT_REG && strcmp(ent->d_name, "uevent") == 0)
         {
-            if (terminacom(ent->d_name, ".ko") == 1 ||
-                terminacom(ent->d_name, ".ko.gz") == 1 ||
-                terminacom(ent->d_name, ".ko.xz") == 1 ||
-                terminacom(ent->d_name, ".ko.zst") == 1)
+            fd = open(caminho, O_WRONLY);
+            if (fd >= 0)
             {
-                carrega_mod(caminho);
+                if (write(fd, "add", 3) < 0)
+                {
+                    perror("write");
+                }
+
+                close(fd);
             }
         }
 
         free(caminho);
     }
 
-    closedir(pasta);
+    closedir(dir);
+}
+
+void device_manager(void)
+{
+    const char *const no_config[] = { NULL };
+    struct kmod_ctx *ctx;
+    struct sockaddr_nl sa = {
+        .nl_family = AF_NETLINK,
+        .nl_groups = 1, // kernel
+    };
+    int fd;
+    const int sock_sz = 8*1024*1024;
+    char buf[4096];
+    ssize_t len;
+
+    // fechar leitura
+    close(pipefd[0]);
+
+    ctx = kmod_new(NULL, no_config);
+    if (ctx == NULL)
+    {
+        return;
+    }
+
+    fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_KOBJECT_UEVENT);
+    if (fd < 0)
+    {
+        perror("socket");
+        return;
+    }
+
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUFFORCE, &sock_sz, sizeof(sock_sz)) < 0) {
+        perror("setsockopt");
+    }
+
+    if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0)
+    {
+        perror("bind");
+        close(fd);
+        return;
+    }
+
+    trigger_coldplug("/sys/bus");
+    trigger_coldplug("/sys/devices");
+
+    while (1)
+    {
+        const char *action = NULL;
+        const char *devname = NULL;
+        const char *devtype = NULL;
+        const char *modalias = NULL;
+        const char *subsystem = NULL;
+        struct kmod_list *l, *list = NULL;
+        int r;
+
+        len = recv(fd, buf, sizeof(buf), 0);
+        if (len < 0)
+        {
+            perror("recv");
+            continue;
+        }
+
+        for (char *p = buf; p - buf < len; p += strlen(p) + 1)
+        {
+            if (strncmp(p, "ACTION=", 7) == 0)
+            {
+                action = p + 7;
+            }
+            else if (strncmp(p, "DEVNAME=", 8) == 0)
+            {
+                devname = p + 8;
+            }
+            else if (strncmp(p, "DEVTYPE=", 8) == 0)
+            {
+                devtype = p + 8;
+            }
+            else if (strncmp(p, "MODALIAS=", 9) == 0)
+            {
+                modalias = p + 9;
+            }
+            else if (strncmp(p, "SUBSYSTEM=", 10) == 0)
+            {
+                subsystem = p + 10;
+            }
+        }
+
+        if (action != NULL && (strcmp(action, "add") == 0 || strcmp(action, "bind") == 0) &&
+            modalias != NULL)
+        {
+            r = kmod_module_new_from_lookup(ctx, modalias, &list);
+            if (r == 0 && list != NULL)
+            {
+                kmod_list_foreach(l, list)
+                {
+                    struct kmod_module *mod = kmod_module_get_module(l);
+
+                    r = kmod_module_probe_insert_module(mod, 0, NULL, NULL, NULL, NULL);
+                    if (r < 0)
+                    {
+                        fprintf(stderr, ANSI_BOLD_RED "falha ao carregar modulo '%s' para modalias '%s' (action '%s'): %s"
+                                ANSI_RESET "\n", kmod_module_get_name(mod), modalias, action, strerror(-r));
+                    }
+
+                    kmod_module_unref(mod);
+                }
+
+                kmod_module_unref_list(list);
+            }
+        }
+
+        // eventos "change" não são relevantes, pois indicam mudança de estado/atributos de dispositivos
+        // com módulos *já carregados*, como hotplug de conectores hdmi, etc
+        if (action != NULL && strcmp(action, "add") == 0)
+        {
+            if (subsystem != NULL && strcmp(subsystem, "drm") == 0 &&
+                devtype != NULL && strcmp(devtype, "drm_minor") == 0)
+            {
+                configura_terminal();
+            }
+
+            if (subsystem != NULL && strcmp(subsystem, "input") == 0 &&
+                devname != NULL && strncmp(devname, "input/event", 11) == 0)
+            {
+                // + 1 para \0 ir junto
+                if (write(pipefd[1], devname, strlen(devname) + 1) < 0)
+                {
+                    perror("write");
+                }
+            }
+        }
+    }
+
+    kmod_unref(ctx);
+    close(pipefd[1]);
+    close(fd);
 }
 
 int main(int argc, char **argv)
 {
     struct libmnt_context *cxt;
-    struct utsname ut;
     struct sigaction acao;
     pid_t wpid;
     int i, fd;
-    char *ker;
     ssize_t j;
     size_t c;
 
@@ -673,7 +754,6 @@ int main(int argc, char **argv)
     }
     sigaction(SIGTERM, &acao, NULL);
 
-    virt = eh_vm();
     umask(0022);
 
     mnt_init_debug(0);
@@ -729,30 +809,32 @@ int main(int argc, char **argv)
         close(fd);
     }
 
-    if (uname(&ut) != 0)
-    {
-        perror("uname");
-        return 1;
-    }
-
-    if (asprintf(&ker, "/usr/lib/modules/%s", ut.release) < 0)
-    {
-        perror("asprintf");
-        return 1;
-    }
-
-    lista_dir_mod(ker);
-    free(ker);
-
     configura_terminal();
-    // agora podemos usar acentos e caracteres especiais \o/
+
+    if (pipe(pipefd) < 0)
+    {
+        perror("pipe");
+        return 1;
+    }
 
     if (fork() == 0)
     {
+        setsid();
         prctl(PR_SET_NAME, "acpid");
         monitora_evdev();
         exit(0);
     }
+
+    if (fork() == 0)
+    {
+        setsid();
+        prctl(PR_SET_NAME, "devmgr");
+        device_manager();
+        exit(0);
+    }
+
+    close(pipefd[0]);
+    close(pipefd[1]);
 
     printf("\n");
     fflush(stdout);
@@ -769,6 +851,7 @@ int main(int argc, char **argv)
         FILE *fp;
         char *versao;
         char dtmp[9];
+        struct utsname ut;
 
         if (setsid() < 0)
         {
@@ -778,6 +861,11 @@ int main(int argc, char **argv)
         if (ioctl(STDIN_FILENO, TIOCSCTTY, 0) != 0)
         {
             perror("ioctl TIOCSCTTY");
+        }
+
+        if (uname(&ut) != 0)
+        {
+            perror("uname");
         }
 
         if ((fp = fopen("/etc/zerong-release", "r")) != NULL &&
