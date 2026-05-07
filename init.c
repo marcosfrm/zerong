@@ -219,7 +219,6 @@ void termina_bash(int sinal)
     }
 }
 
-
 // função inspirada em:
 // https://github.com/mirror/busybox/blob/1_35_0/util-linux/acpid.c
 // com a restrição de dispositivos de:
