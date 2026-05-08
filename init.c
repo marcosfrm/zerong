@@ -126,7 +126,7 @@ void saudacao(void)
     printf(ANSI_RESET "\n\n");
 }
 
-void configura_terminal(void)
+void configura_terminal(int dup_std)
 {
     struct termios tty;
     struct kfont_context *kfont_ctx;
@@ -190,11 +190,13 @@ void configura_terminal(void)
         kbdfile_free(kbd_ctx);
     }
 
-    unsetenv("KEYB");
+    if (dup_std != 0)
+    {
+        dup2(fd, STDIN_FILENO);
+        dup2(fd, STDOUT_FILENO);
+        dup2(fd, STDERR_FILENO);
+    }
 
-    dup2(fd, STDIN_FILENO);
-    dup2(fd, STDOUT_FILENO);
-    dup2(fd, STDERR_FILENO);
     if (fd > STDERR_FILENO)
     {
         close(fd);
@@ -234,7 +236,7 @@ void monitora_evdev(void)
     struct input_event ev;
     char buf[1024], dev_ev[64];
     char *ptr;
-    ssize_t n;
+    ssize_t len;
 
     // fechar escrita
     close(pipefd[1]);
@@ -288,12 +290,10 @@ void monitora_evdev(void)
             {
                 if (i == 0)
                 {
-                    n = read(pfd[i].fd, buf, sizeof(buf));
-                    if (n > 0)
+                    len = read(pfd[i].fd, buf, sizeof(buf));
+                    if (len > 0)
                     {
-                        ptr = buf;
-
-                        while (ptr < buf + n)
+                        for (ptr = buf; ptr < buf + len; ptr += strlen(ptr) + 1)
                         {
                             snprintf(dev_ev, sizeof(dev_ev), "/dev/%s", ptr);
 
@@ -328,8 +328,6 @@ void monitora_evdev(void)
                             {
                                 close(fd);
                             }
-
-                            ptr += strlen(ptr) + 1;
                         }
                     }
                 }
@@ -579,6 +577,7 @@ void device_manager(void)
     int fd;
     const int sock_sz = 8*1024*1024;
     char buf[4096];
+    char *ptr;
     ssize_t len;
 
     // fechar leitura
@@ -628,27 +627,27 @@ void device_manager(void)
             continue;
         }
 
-        for (char *p = buf; p - buf < len; p += strlen(p) + 1)
+        for (ptr = buf; ptr < buf + len; ptr += strlen(ptr) + 1)
         {
-            if (strncmp(p, "ACTION=", 7) == 0)
+            if (strncmp(ptr, "ACTION=", 7) == 0)
             {
-                action = p + 7;
+                action = ptr + 7;
             }
-            else if (strncmp(p, "DEVNAME=", 8) == 0)
+            else if (strncmp(ptr, "DEVNAME=", 8) == 0)
             {
-                devname = p + 8;
+                devname = ptr + 8;
             }
-            else if (strncmp(p, "DEVTYPE=", 8) == 0)
+            else if (strncmp(ptr, "DEVTYPE=", 8) == 0)
             {
-                devtype = p + 8;
+                devtype = ptr + 8;
             }
-            else if (strncmp(p, "MODALIAS=", 9) == 0)
+            else if (strncmp(ptr, "MODALIAS=", 9) == 0)
             {
-                modalias = p + 9;
+                modalias = ptr + 9;
             }
-            else if (strncmp(p, "SUBSYSTEM=", 10) == 0)
+            else if (strncmp(ptr, "SUBSYSTEM=", 10) == 0)
             {
-                subsystem = p + 10;
+                subsystem = ptr + 10;
             }
         }
 
@@ -683,7 +682,7 @@ void device_manager(void)
             if (subsystem != NULL && strcmp(subsystem, "drm") == 0 &&
                 devtype != NULL && strcmp(devtype, "drm_minor") == 0)
             {
-                configura_terminal();
+                configura_terminal(0);
             }
 
             if (subsystem != NULL && strcmp(subsystem, "input") == 0 &&
@@ -808,7 +807,7 @@ int main(int argc, char **argv)
         close(fd);
     }
 
-    configura_terminal();
+    configura_terminal(1);
 
     if (pipe(pipefd) < 0)
     {
