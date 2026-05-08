@@ -290,9 +290,11 @@ void monitora_evdev(void)
             {
                 if (i == 0)
                 {
-                    len = read(pfd[i].fd, buf, sizeof(buf));
+                    len = read(pfd[i].fd, buf, sizeof(buf) - 1);
                     if (len > 0)
                     {
+                        buf[len] = '\0';
+
                         for (ptr = buf; ptr < buf + len; ptr += strlen(ptr) + 1)
                         {
                             snprintf(dev_ev, sizeof(dev_ev), "/dev/%s", ptr);
@@ -620,12 +622,18 @@ void device_manager(void)
         struct kmod_list *l, *list = NULL;
         int r;
 
-        len = recv(fd, buf, sizeof(buf), 0);
+        len = recv(fd, buf, sizeof(buf) - 1, 0);
         if (len < 0)
         {
             perror("recv");
             continue;
         }
+        else if (len == 0)
+        {
+            continue;
+        }
+
+        buf[len] = '\0';
 
         for (ptr = buf; ptr < buf + len; ptr += strlen(ptr) + 1)
         {
