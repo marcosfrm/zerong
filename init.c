@@ -578,7 +578,7 @@ void device_manager(void)
     };
     int fd;
     const int sock_sz = 8*1024*1024;
-    char buf[4096];
+    char buf[8192];
     char *ptr;
     ssize_t len;
 
