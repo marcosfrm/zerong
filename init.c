@@ -347,7 +347,6 @@ void monitora_evdev(void)
                     }
                 }
             }
-
         }
     }
 
