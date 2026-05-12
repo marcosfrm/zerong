@@ -138,9 +138,6 @@ void configura_terminal(int dup_std)
     const char *const kbddir[] = { "/usr/lib/kbd/keymaps/xkb/", NULL };
     const char *const kbdsuf[] = { ".map", NULL };
 
-    setenv("LC_ALL", "C.UTF-8", 1);
-    setlocale(LC_ALL, "");
-
     // processo do bash configurará como terminal controlador depois
     fd = open("/dev/tty0", O_RDWR|O_NOCTTY);
     if (fd < 0)
@@ -192,6 +189,9 @@ void configura_terminal(int dup_std)
 
     if (dup_std != 0)
     {
+        setenv("LC_ALL", "C.UTF-8", 1);
+        setlocale(LC_ALL, "");
+
         dup2(fd, STDIN_FILENO);
         dup2(fd, STDOUT_FILENO);
         dup2(fd, STDERR_FILENO);
