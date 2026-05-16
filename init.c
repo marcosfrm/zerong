@@ -615,6 +615,7 @@ void device_manager(void)
     {
         const char *action = NULL;
         const char *devname = NULL;
+        const char *devpath = NULL;
         const char *devtype = NULL;
         const char *modalias = NULL;
         const char *subsystem = NULL;
@@ -643,6 +644,10 @@ void device_manager(void)
             else if (strncmp(ptr, "DEVNAME=", 8) == 0)
             {
                 devname = ptr + 8;
+            }
+            else if (strncmp(ptr, "DEVPATH=", 8) == 0)
+            {
+                devpath = ptr + 8;
             }
             else if (strncmp(ptr, "DEVTYPE=", 8) == 0)
             {
@@ -686,8 +691,11 @@ void device_manager(void)
         // com módulos *já carregados*, como hotplug de conectores hdmi, etc
         if (action != NULL && strcmp(action, "add") == 0)
         {
+            // ignoramos o simpledrm, pois a configuração já foi feita em main()
             if (subsystem != NULL && strcmp(subsystem, "drm") == 0 &&
-                devtype != NULL && strcmp(devtype, "drm_minor") == 0)
+                devtype != NULL && strcmp(devtype, "drm_minor") == 0 &&
+                devpath != NULL && strstr(devpath, "simple-framebuffer.0") == NULL &&
+                devname != NULL && strstr(devname, "card") != NULL)
             {
                 configura_terminal(0);
             }
