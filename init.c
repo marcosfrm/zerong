@@ -832,6 +832,9 @@ int main(int argc, char **argv)
 
     if (fork() == 0)
     {
+        signal(SIGINT, SIG_DFL);
+        signal(SIGTERM, SIG_DFL);
+
         setsid();
         prctl(PR_SET_NAME, "acpid");
         monitora_evdev();
@@ -840,6 +843,9 @@ int main(int argc, char **argv)
 
     if (fork() == 0)
     {
+        signal(SIGINT, SIG_DFL);
+        signal(SIGTERM, SIG_DFL);
+
         setsid();
         prctl(PR_SET_NAME, "devmgr");
         device_manager();
